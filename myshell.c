@@ -187,7 +187,7 @@ int checkFor_IOredirection(char** parsed){
 }
 
 // function for parsing command words
-int parseSpace(char* str, char** parsed){
+int parseSpace(char* str, char** parsed, int* parsedArgsLen ){
 	int i;
 
 	for (i = 0; i < MAXWORD; i++) {
@@ -198,6 +198,7 @@ int parseSpace(char* str, char** parsed){
 		if (strlen(parsed[i]) == 0)
 			i--;
 	}
+	*parsedArgsLen =i;
 	return checkFor_IOredirection(parsed);
 }
 
@@ -230,9 +231,18 @@ void setParentEnv(){
   return;
 }
 
-// Function where the system command is executed
-void execArgs(char** parsed){
+// check if there is ampersand at the end of the command line
+int is_Background(char* lastStrInput) {
+    if(strcmp(lastStrInput, "&") == 0) {
+        return 1;
+    }
+    return 0;
+}
 
+// Function where the system command is executed
+void execArgs(char** parsed,int* parsedArgsLen){
+
+    int is_BG = is_Background(parsed[*parsedArgsLen-1]);
 	// Forking a child
 	pid_t pid = fork();
 
@@ -245,17 +255,20 @@ void execArgs(char** parsed){
 		}
 		exit(0);
 	} else {
-    // set the env  parent=<pathname>/myshell
-    setParentEnv();
+        // set the env  parent=<pathname>/myshell
+        setParentEnv();
 		// waiting for child to terminate
-		wait(NULL);
+		if(!is_BG )
+            waitpid(pid, NULL, 0);
+            is_BG=0;
 		return;
 	}
 }
 
 // Function where the piped system commands is executed
-void execArgsPiped(char** parsed, char** parsedpipe){
+void execArgsPiped(char** parsed, char** parsedpipe,int* parsedArgsLen){
 
+  int is_BG = is_Background(parsed[*parsedArgsLen-1]);
   pid_t p1;
   p1 = fork();
 	if (p1 < 0) {
@@ -299,7 +312,7 @@ void execArgsPiped(char** parsed, char** parsedpipe){
           // set the env  parent=<pathname>/myshell
           setParentEnv();
           // youngParent executing, waiting for his child
-          wait(NULL);
+          waitpid(p2, NULL, 0);
 
           if (execvp(parsedpipe[0], parsedpipe) < 0) {
               printf("\nCould not execute command 2..");
@@ -310,8 +323,10 @@ void execArgsPiped(char** parsed, char** parsedpipe){
       // set the env  parent=<pathname>/myshell
       setParentEnv();
       // parent executing, waiting for his child "youngParent"
-      wait(NULL);
+      if(!is_BG )
+        waitpid(p1, NULL, 0);
 
+      is_BG=0;
   }
 }
 
@@ -382,19 +397,19 @@ void command_cd(char *parsed[]){
 }
 
 //
-void Command_dir(char *parsed[]){
+void Command_dir(char *parsed[],int* parsedArgsLen){
 	char dirpath[MAX_PATH];
 
   if(checkPathTochange(parsed,dirpath)){
     parsed[0]="ls";
     parsed[1]=dirpath;
     parsed[2]=NULL;
-    execArgs(parsed) ;
+    execArgs(parsed,(int*)3) ;
   }
 }
 
 // Function to execute builtin commands
-int ownCmdHandler(char** parsed){
+int ownCmdHandler(char** parsed,int* parsedArgsLen){
 	int NoOfOwnCmds = 8, i, switchOwnArg = 0;
 	char* ListOfOwnCmds[NoOfOwnCmds];
 	char* username;
@@ -426,12 +441,12 @@ int ownCmdHandler(char** parsed){
 		openHelp();
 		return 1;
 	case 4:
-		username = getenv("USER");
-		printf("\nHello %s.\nMind that this is "
-			"not a place to play around."
-			"\nUse help to know more..\n",
-			username);
-		return 1;
+        username = getenv("USER");
+        printf("\nHello %s.\nMind that this is "
+            "not a place to play around."
+            "\nUse help to know more..\n",
+            username);
+        return 1;
     case 5:
       clear();
       return 1;
@@ -439,7 +454,7 @@ int ownCmdHandler(char** parsed){
       environ_list();
       return 1;
     case 7:
-      Command_dir(parsed);
+      Command_dir(parsed,parsedArgsLen);
       return 1;
     case 8:
       getpass("press <Enter> key to continue");
@@ -458,7 +473,7 @@ int checkIfThereIsABatchFile(char** parsed){
 }
 
 //
-int processString(char* str, char** parsed, char** parsedpipe,int* IORedirectionFlag){
+int processString(char* str, char** parsed, char** parsedpipe,int* IORedirectionFlag,int* parsedArgsLen){
 
 	char* strpiped[2];
 	int piped = 0;
@@ -466,17 +481,17 @@ int processString(char* str, char** parsed, char** parsedpipe,int* IORedirection
 	piped = parsePipe(str, strpiped);
 
 	if (piped) {
-		*IORedirectionFlag=parseSpace(strpiped[0], parsed);
-		*IORedirectionFlag=parseSpace(strpiped[1], parsedpipe);
+		*IORedirectionFlag=parseSpace(strpiped[0], parsed,parsedArgsLen);
+		*IORedirectionFlag=parseSpace(strpiped[1], parsedpipe,parsedArgsLen);
 
 	} else {
-		*IORedirectionFlag=parseSpace(str, parsed);
+		*IORedirectionFlag=parseSpace(str, parsed,parsedArgsLen);
 	}
 
   if(checkIfThereIsABatchFile(parsed))
    return 3;
-	else if (ownCmdHandler(parsed))
-	 return 0;
+  else if (ownCmdHandler(parsed,parsedArgsLen))
+   return 0;
   return 1 + piped;
 }
 
@@ -487,7 +502,7 @@ int main(){
 
 	char command_inputString[MAXCOMMAND], *parsedArgs[MAXWORD];
 	char* parsedArgsPiped[MAXWORD];
-	int execFlag = 0,batchFlag=0,IORedirectionFlag=0;
+	int execFlag = 0,batchFlag=0,IORedirectionFlag=0,parsedArgsLen=0;
 
 	init_shell();
 
@@ -499,19 +514,19 @@ int main(){
 		if (takeInput(command_inputString,&batchFlag))
 			continue;
 		// process
-		execFlag = processString(command_inputString,parsedArgs, parsedArgsPiped,&IORedirectionFlag);
+		execFlag = processString(command_inputString,parsedArgs, parsedArgsPiped,&IORedirectionFlag,&parsedArgsLen);
 		// execflag returns zero if there is no command
 		// or it is a builtin command,
 		// 1 if it is a simple command,
 		// 2 if it is including a pipe,
-    // 3 if it is reading from a batchFile.
+        // 3 if it is reading from a batchFile.
 
 		// execute
 		if (execFlag == 1)
-			execArgs(parsedArgs);
+			execArgs(parsedArgs,&parsedArgsLen);
 
 		if (execFlag == 2)
-			execArgsPiped(parsedArgs, parsedArgsPiped);
+			execArgsPiped(parsedArgs, parsedArgsPiped,&parsedArgsLen);
 
         if (execFlag == 3){
             batchFlag=1;
@@ -520,7 +535,6 @@ int main(){
 
         if(IORedirectionFlag){
             // reinialize the I/O redirection to the default values
-
             dup2(stdin_copy, 0);
             dup2(stdout_copy, 1);
         }
