@@ -13,8 +13,8 @@ void setShellEnv(){
 // Greeting shell during startup
 void init_shell(){
 	clear();
-	printf("\n\n\n\t+++++++++++++++OUR SHELL++++++++++++++++++++");
-	printf("\n\n\n\t+++++++++- LYNA, AMAL, ENAAM -+++++++++++++++");
+	printf("\n\n\n\t+++++++++++++++MY SHELL++++++++++++++++++++");
+	printf("\n\n\n\t+++++++++- ------------------ -+++++++++++++++");
     printf("\n\n\n....Type 'help' for entire user manual \nto show the information about the command you want....");
 	char* username = getenv("USER");
 	printf("\n\n\n %s@%s\n", username,getenv("PWD"));
